@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Maranza Hunter — Passeggiata a Milano Marittima</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; user-select:none; -webkit-user-select:none; }
+  html,body { width:100%; height:100%; overflow:hidden; background:#000; font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif; }
+
+  #game { position:relative; width:100vw; height:100vh; overflow:hidden; }
+  #pano { position:absolute; inset:0; z-index:1; }
+
+  #addressChip {
+    position:absolute; top:14px; left:14px; z-index:30;
+    background:rgba(34,34,34,.85); color:#fff; padding:9px 16px;
+    border-radius:3px; font-size:14px; box-shadow:0 1px 4px rgba(0,0,0,.4);
+    display:flex; align-items:center; gap:8px; pointer-events:none;
+  }
+  #addressChip .pin { color:#ff5252; font-size:16px; }
+  #addressChip small { display:block; color:#bbb; font-size:11px; }
+
+  #hud {
+    position:absolute; bottom:0; left:0; right:0; z-index:30;
+    display:flex; justify-content:space-between; align-items:flex-end;
+    padding:14px 18px; pointer-events:none;
+    background:linear-gradient(transparent, rgba(0,0,0,.45));
+  }
+  .hudBox { background:rgba(34,34,34,.85); color:#fff; padding:8px 14px; border-radius:6px;
+    font-size:15px; box-shadow:0 1px 4px rgba(0,0,0,.4); }
+  #score b { color:#ffd54f; font-size:19px; }
+  #combo { color:#80deea; font-size:12px; margin-left:8px; }
+  #lives { letter-spacing:3px; font-size:18px; }
+  #stepsBox b { color:#a5d6a7; }
+
+  #dangerBar {
+    position:absolute; top:14px; left:50%; transform:translateX(-50%); z-index:30;
+    background:rgba(34,34,34,.85); color:#fff; padding:7px 14px; border-radius:20px;
+    font-size:13px; pointer-events:none; display:flex; align-items:center; gap:8px;
+  }
+  #dangerLevel { display:inline-block; width:90px; height:8px; background:#455a64; border-radius:4px; overflow:hidden; }
+  #dangerFill { display:block; height:100%; width:10%; background:linear-gradient(90deg,#66bb6a,#ffca28,#ef5350); transition:width .5s; }
+
+  .npc {
+    position:absolute; z-index:20; cursor:crosshair;
+    transform-origin:bottom center;
+    animation: popUp .28s cubic-bezier(.2,1.6,.4,1) forwards;
+  }
+  .npc svg { display:block; pointer-events:none; }
+  @keyframes popUp { from { transform:scale(0) } to { transform:scale(1) } }
+  .npc.leaving { animation: shake .12s linear infinite; }
+  @keyframes shake { 0%{transform:scale(1) rotate(-3deg)} 50%{transform:scale(1) rotate(3deg)} 100%{transform:scale(1) rotate(-3deg)} }
+  .npc.dead { animation: spinAway .55s ease-in forwards; pointer-events:none; }
+  @keyframes spinAway {
+    30% { transform:scale(1.15) rotate(20deg); }
+    100% { transform:scale(0) rotate(540deg) translateY(-160px); opacity:0; }
+  }
+
+  .ring { position:absolute; top:-26px; left:50%; transform:translateX(-50%); width:20px; height:20px; }
+  .ring circle { fill:none; stroke-width:3; }
+  .ring .bg { stroke:rgba(0,0,0,.35); }
+  .ring .fg { stroke:#ffd54f; stroke-linecap:round; transform:rotate(-90deg); transform-origin:center; }
+
+  .poof { position:absolute; z-index:22; pointer-events:none; font-size:34px;
+    animation: poofA .5s ease-out forwards; }
+  @keyframes poofA { from{ transform:scale(.4); opacity:1 } to{ transform:scale(1.8); opacity:0 } }
+
+  .floatTxt { position:absolute; z-index:23; pointer-events:none; font-weight:700;
+    font-size:20px; color:#ffd54f; text-shadow:0 1px 3px rgba(0,0,0,.6);
+    animation: floatUp .9s ease-out forwards; }
+  .floatTxt.bad { color:#ff8a80; }
+  @keyframes floatUp { from{ transform:translateY(0); opacity:1 } to{ transform:translateY(-60px); opacity:0 } }
+
+  .taunt { position:absolute; z-index:24; pointer-events:none;
+    background:#fff; color:#222; font-size:13px; font-weight:600; padding:6px 10px;
+    border-radius:12px 12px 12px 2px; box-shadow:0 2px 6px rgba(0,0,0,.3);
+    animation: tauntA 1.3s ease-out forwards; white-space:nowrap; }
+  @keyframes tauntA { 0%{transform:scale(0)} 15%{transform:scale(1)} 80%{opacity:1} 100%{opacity:0} }
+
+  .flash { position:absolute; z-index:40; width:26px; height:26px; border-radius:50%;
+    background:radial-gradient(#fff,#ffd54f 40%, transparent 70%);
+    pointer-events:none; animation: flashA .12s ease-out forwards; }
+  @keyframes flashA { from{ transform:scale(1); opacity:1 } to{ transform:scale(.2); opacity:0 } }
+
+  .overlay {
+    position:absolute; inset:0; z-index:50; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:16px; text-align:center;
+    background:rgba(10,15,30,.88); color:#fff; backdrop-filter:blur(3px);
+    overflow-y:auto; padding:30px 0;
+  }
+  .overlay h1 { font-size:42px; letter-spacing:1px; text-shadow:0 3px 0 #c2185b; }
+  .overlay h1 .mm { color:#4fc3f7; }
+  .overlay p { max-width:560px; line-height:1.5; color:#cfd8dc; padding:0 20px; font-size:15px; }
+  .overlay .big { font-size:64px; }
+  .btn {
+    background:#e91e63; color:#fff; border:none; font-size:19px; font-weight:700;
+    padding:14px 38px; border-radius:30px; cursor:pointer; letter-spacing:.5px;
+    box-shadow:0 4px 0 #ad1457; transition:transform .1s;
+  }
+  .btn:hover { transform:scale(1.05); }
+  .btn:active { transform:translateY(3px); box-shadow:0 1px 0 #ad1457; }
+  .btn:disabled { opacity:.5; cursor:wait; transform:none; }
+  .hidden { display:none !important; }
+
+  #keyInput {
+    width:min(480px, 86vw); padding:13px 16px; font-size:15px; border-radius:8px;
+    border:2px solid #4fc3f7; background:#fff; color:#222; text-align:center; font-family:monospace;
+  }
+  #keyInput:focus { outline:none; border-color:#e91e63; }
+  details { max-width:560px; color:#90caf9; font-size:14px; cursor:pointer; padding:0 20px; }
+  details p { text-align:left; margin-top:10px; color:#b0bec5; font-size:13.5px; }
+  details a { color:#4fc3f7; }
+  #keyError { color:#ff8a80; font-size:14px; min-height:18px; max-width:560px; }
+
+  #banner {
+    position:absolute; top:34%; left:50%; transform:translate(-50%,-50%);
+    z-index:45; color:#fff; font-size:40px; font-weight:800; text-align:center;
+    text-shadow:0 3px 8px rgba(0,0,0,.7); opacity:0; pointer-events:none;
+    transition:opacity .25s;
+  }
+  #banner small { display:block; font-size:16px; font-weight:400; color:#ffe082; margin-top:6px; }
+  #banner.show { opacity:1; }
+  #banner.alarm { color:#ff5252; animation: pulse .4s linear 3; }
+  @keyframes pulse { 50% { transform:translate(-50%,-50%) scale(1.12); } }
+
+  #finalStats { font-size:18px; line-height:1.8; }
+  #finalStats b { color:#ffd54f; }
+</style>
+</head>
+<body>
+<div id="game">
+  <div id="pano"></div>
+
+  <div id="addressChip"><span class="pin">📍</span><span><span id="addrName">Milano Marittima</span><small id="addrSub">Cervia, Emilia-Romagna</small></span></div>
+  <div id="dangerBar">⚠️ Pericolo <span id="dangerLevel"><span id="dangerFill"></span></span></div>
+
+  <div id="hud">
+    <div class="hudBox" id="score">Punti: <b id="scoreVal">0</b><span id="combo"></span></div>
+    <div class="hudBox" id="stepsBox">Passi: <b id="stepsVal">0</b></div>
+    <div class="hudBox" id="lives">🕶️🕶️🕶️</div>
+  </div>
+
+  <div id="banner"></div>
+
+  <div class="overlay" id="keyScreen">
+    <h1>MARANZA HUNTER<br><span class="mm">Passeggiata a Milano Marittima</span></h1>
+    <p>Serve una API key di Google Maps (gratuita entro i limiti mensili di Google).</p>
+    <input id="keyInput" type="text" placeholder="Incolla qui la tua Google Maps API key" autocomplete="off" spellcheck="false">
+    <div id="keyError"></div>
+    <button class="btn" id="btnKey">Carica Street View →</button>
+    <details>
+      <summary>Come ottengo la API key gratis?</summary>
+      <p>1. Vai su <a href="https://console.cloud.google.com/google/maps-apis" target="_blank">console.cloud.google.com/google/maps-apis</a><br>
+         2. Crea un progetto → abilita la <b>Maps JavaScript API</b><br>
+         3. Keys &amp; Credentials → Create credentials → API key<br>
+         4. Incollala qui sopra. Resta salvata solo nel tuo browser.</p>
+    </details>
+  </div>
+
+  <div class="overlay hidden" id="startScreen">
+    <h1>MARANZA HUNTER<br><span class="mm">Passeggiata a Milano Marittima</span></h1>
+    <p>🚶 <b>Passeggia liberamente</b> per il centro di Mi-Ma in Street View: trascina per guardarti
+       intorno, clicca sulle frecce della strada per camminare.<br><br>
+       ⚠️ Più cammini, più sale il <b>pericolo</b>: i maranza possono saltarti addosso a ogni passo!
+       <b>Cliccali</b> per annientarli prima che ti insultino (perdi un 🕶️).<br><br>
+       Non colpire i <b>turisti innocenti</b> (-150 punti). Anche fermarsi troppo è rischioso...<br>
+       Ogni passo vale punti. Quanto sopravvivi?</p>
+    <button class="btn" id="btnStart">🕶️ Inizia la passeggiata</button>
+  </div>
+
+  <div class="overlay hidden" id="gameOverScreen">
+    <div class="big">💀</div>
+    <h1>GAME OVER</h1>
+    <p id="goText">I maranza hanno conquistato Milano Marittima...</p>
+    <div id="finalStats"></div>
+    <button class="btn" id="btnRetry">↻ Rivincita</button>
+  </div>
+</div>
+
+<script>
+/* ================= CONFIG ================= */
+const START = { lat:44.27662, lng:12.35492, name:"Rotonda 1° Maggio" }; // centro Mi-Ma
+const DEFAULT_KEY = 'AIzaSyAxMmTCT2W45tGLRe4XWwy81kxbcvGPi3E';
+
+/* ================= PERSONAGGI ================= */
+function maranzaSVG(h) {
+  const skins = ['#e0ac69','#c68642','#f1c27d'];
+  const tute = [['#111','#fff'],['#0d47a1','#fff'],['#1b5e20','#ffd600'],['#4a148c','#fff']];
+  const skin = skins[Math.floor(Math.random()*skins.length)];
+  const [tuta, riga] = tute[Math.floor(Math.random()*tute.length)];
+  return `<svg width="${h*0.62}" height="${h}" viewBox="0 0 100 160" xmlns="http://www.w3.org/2000/svg">
+    <rect x="30" y="100" width="17" height="52" rx="7" fill="${tuta}"/>
+    <rect x="53" y="100" width="17" height="52" rx="7" fill="${tuta}"/>
+    <rect x="33" y="104" width="3" height="44" fill="${riga}"/>
+    <rect x="64" y="104" width="3" height="44" fill="${riga}"/>
+    <path d="M26 150 h22 v8 h-26 q-3 -6 4 -8" fill="#fff" stroke="#ccc"/>
+    <path d="M52 150 h22 q7 2 4 8 h-26 Z" fill="#fff" stroke="#ccc"/>
+    <path d="M28 58 Q50 48 72 58 L76 104 L24 104 Z" fill="${tuta}"/>
+    <path d="M48 58 L52 58 L52 104 L48 104 Z" fill="${riga}"/>
+    <rect x="24" y="60" width="8" height="40" rx="4" fill="${tuta}"/>
+    <rect x="68" y="60" width="8" height="40" rx="4" fill="${tuta}"/>
+    <path d="M28 62 L70 92" stroke="#222" stroke-width="7"/>
+    <rect x="56" y="82" width="22" height="14" rx="6" fill="#333" stroke="#555"/>
+    <circle cx="28" cy="102" r="6" fill="${skin}"/>
+    <circle cx="72" cy="102" r="6" fill="${skin}"/>
+    <circle cx="50" cy="36" r="20" fill="${skin}"/>
+    <path d="M32 28 Q36 8 54 10 Q72 12 68 28 Q60 18 50 20 Q40 22 32 28" fill="#1a1a1a"/>
+    <path d="M46 12 Q52 4 58 12 L54 16 Z" fill="#1a1a1a"/>
+    <rect x="34" y="30" width="13" height="9" rx="3" fill="#111"/>
+    <rect x="53" y="30" width="13" height="9" rx="3" fill="#111"/>
+    <rect x="46" y="32" width="8" height="3" fill="#111"/>
+    <path d="M43 48 Q50 53 57 48" stroke="#8d5524" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+    <path d="M40 58 Q50 68 60 58" stroke="#ffd600" stroke-width="3" fill="none"/>
+  </svg>`;
+}
+function turistaSVG(h) {
+  const tipi = [
+    `<rect x="32" y="70" width="36" height="60" rx="14" fill="#ce93d8"/>
+     <rect x="34" y="128" width="12" height="24" fill="#fce4ec"/><rect x="54" y="128" width="12" height="24" fill="#fce4ec"/>
+     <path d="M30 150 h18 v6 h-20 Z" fill="#6d4c41"/><path d="M52 150 h18 q3 3 0 6 h-18 Z" fill="#6d4c41"/>
+     <circle cx="50" cy="44" r="19" fill="#ffccbc"/>
+     <path d="M32 40 Q34 18 50 18 Q66 18 68 40 Q66 26 50 26 Q34 26 32 40" fill="#eceff1"/>
+     <circle cx="43" cy="42" r="3" fill="#333"/><circle cx="57" cy="42" r="3" fill="#333"/>
+     <circle cx="43" cy="42" r="6" fill="none" stroke="#777" stroke-width="2"/><circle cx="57" cy="42" r="6" fill="none" stroke="#777" stroke-width="2"/>
+     <path d="M44 54 Q50 58 56 54" stroke="#a1887f" stroke-width="2" fill="none"/>
+     <rect x="14" y="92" width="18" height="22" rx="4" fill="#8d6e63"/><path d="M16 92 Q23 80 30 92" stroke="#5d4037" stroke-width="3" fill="none"/>`,
+    `<rect x="32" y="68" width="36" height="46" rx="12" fill="#4fc3f7"/>
+     <rect x="36" y="112" width="12" height="40" fill="#ffe082"/><rect x="52" y="112" width="12" height="40" fill="#ffe082"/>
+     <path d="M32 150 h18 v6 h-20 Z" fill="#ff7043"/><path d="M50 150 h18 q3 3 0 6 h-18 Z" fill="#ff7043"/>
+     <circle cx="50" cy="42" r="19" fill="#ffcc80"/>
+     <path d="M30 38 Q32 16 50 16 Q68 16 70 38 L74 40 Q70 44 66 42 L34 42 Q30 44 26 40 Z" fill="#ffee58"/>
+     <circle cx="43" cy="42" r="3" fill="#333"/><circle cx="57" cy="42" r="3" fill="#333"/>
+     <path d="M43 52 Q50 57 57 52" stroke="#bf360c" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+     <circle cx="22" cy="84" r="8" fill="#f48fb1"/><circle cx="22" cy="78" r="7" fill="#a5d6a7"/><path d="M16 90 L22 112 L28 90 Z" fill="#d7a86e"/>`
+  ];
+  return `<svg width="${h*0.62}" height="${h}" viewBox="0 0 100 160" xmlns="http://www.w3.org/2000/svg">${tipi[Math.floor(Math.random()*tipi.length)]}</svg>`;
+}
+
+/* ---- nuovi nemici ---- */
+function pettoNudoSVG(h) {
+  const skins = ['#e8b07e','#d49462','#c97f4e'];
+  const skin = skins[Math.floor(Math.random()*skins.length)];
+  return `<svg width="${h*0.66}" height="${h}" viewBox="0 0 100 160" xmlns="http://www.w3.org/2000/svg">
+    <rect x="30" y="102" width="18" height="48" rx="7" fill="#0288d1"/>
+    <rect x="52" y="102" width="18" height="48" rx="7" fill="#0288d1"/>
+    <path d="M30 96 h40 v14 h-40 Z" fill="#0277bd"/>
+    <path d="M26 148 h22 v8 h-26 q-3 -6 4 -8" fill="#424242"/>
+    <path d="M52 148 h22 q7 2 4 8 h-26 Z" fill="#424242"/>
+    <path d="M27 60 Q50 50 73 60 L76 102 L24 102 Z" fill="${skin}"/>
+    <path d="M38 70 Q50 78 62 70" stroke="${skin==='#c97f4e'?'#b06a3c':'#c08850'}" stroke-width="3" fill="none"/>
+    <path d="M36 84 h12 M52 84 h12 M36 93 h12 M52 93 h12" stroke="${skin==='#c97f4e'?'#b06a3c':'#c08850'}" stroke-width="3"/>
+    <rect x="18" y="58" width="11" height="42" rx="5" fill="${skin}"/>
+    <rect x="71" y="58" width="11" height="42" rx="5" fill="${skin}"/>
+    <circle cx="23" cy="56" r="9" fill="${skin}"/>
+    <circle cx="77" cy="56" r="9" fill="${skin}"/>
+    <circle cx="50" cy="36" r="20" fill="${skin}"/>
+    <path d="M33 26 Q40 12 56 13 Q68 15 67 26 Q58 18 48 20 Q38 22 33 26" fill="#222"/>
+    <rect x="34" y="30" width="13" height="9" rx="3" fill="#111"/>
+    <rect x="53" y="30" width="13" height="9" rx="3" fill="#111"/>
+    <rect x="46" y="32" width="8" height="3" fill="#111"/>
+    <path d="M42 49 Q50 54 58 49" stroke="#8d5524" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+    <path d="M40 58 Q50 70 60 58" stroke="#ffd600" stroke-width="4" fill="none"/>
+  </svg>`;
+}
+function bevitoreSVG(h) {
+  return `<svg width="${h*0.66}" height="${h}" viewBox="0 0 100 160" xmlns="http://www.w3.org/2000/svg">
+    <rect x="30" y="100" width="17" height="50" rx="7" fill="#ef6c00"/>
+    <rect x="53" y="100" width="17" height="50" rx="7" fill="#ef6c00"/>
+    <path d="M26 148 h22 v8 h-26 q-3 -6 4 -8" fill="#3e2723"/>
+    <path d="M52 148 h22 q7 2 4 8 h-26 Z" fill="#3e2723"/>
+    <path d="M28 58 Q50 50 72 58 L75 102 L25 102 Z" fill="#fff176"/>
+    <path d="M34 62 q6 8 0 16 q6 8 0 16 M46 60 q6 8 0 16 q6 8 0 16 M58 60 q6 8 0 16 q6 8 0 16" stroke="#f57f17" stroke-width="3" fill="none"/>
+    <path d="M28 58 L40 58 L36 102 L25 102 Z" fill="#fff" opacity=".5"/>
+    <rect x="20" y="58" width="10" height="34" rx="5" fill="#fff176"/>
+    <rect x="70" y="58" width="10" height="26" rx="5" fill="#fff176"/>
+    <circle cx="25" cy="94" r="6" fill="#e8b07e"/>
+    <circle cx="76" cy="82" r="6" fill="#e8b07e"/>
+    <g transform="translate(76,82) rotate(-35)">
+      <rect x="-5" y="-26" width="10" height="24" rx="3" fill="#43a047"/>
+      <rect x="-2.5" y="-34" width="5" height="9" fill="#2e7d32"/>
+      <rect x="-5" y="-20" width="10" height="8" fill="#fdd835"/>
+    </g>
+    <circle cx="50" cy="36" r="20" fill="#e8b07e"/>
+    <circle cx="44" cy="42" r="2.5" fill="#b71c1c" opacity=".5"/>
+    <circle cx="57" cy="43" r="2.5" fill="#b71c1c" opacity=".5"/>
+    <path d="M33 28 Q38 16 52 15 Q66 16 67 28 Q58 22 50 23 Q40 24 33 28" fill="#6d4c41"/>
+    <circle cx="43" cy="36" r="3" fill="#333"/><circle cx="57" cy="36" r="3" fill="#333"/>
+    <ellipse cx="50" cy="44" rx="4" ry="3" fill="#ef9a9a"/>
+    <path d="M42 51 Q50 57 58 51" stroke="#8d5524" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  </svg>`;
+}
+function bikiniSVG(h) {
+  const cols = ['#e91e63','#7e57c2','#00acc1','#f4511e'];
+  const c = cols[Math.floor(Math.random()*cols.length)];
+  const hair = ['#3e2723','#fbc02d','#6d4c41'][Math.floor(Math.random()*3)];
+  return `<svg width="${h*0.6}" height="${h}" viewBox="0 0 100 160" xmlns="http://www.w3.org/2000/svg">
+    <rect x="34" y="100" width="13" height="50" rx="6" fill="#eeb98a"/>
+    <rect x="53" y="100" width="13" height="50" rx="6" fill="#eeb98a"/>
+    <path d="M30 150 h16 v6 h-18 Z" fill="#ff4081"/>
+    <path d="M54 150 h16 q3 3 0 6 h-16 Z" fill="#ff4081"/>
+    <path d="M32 60 Q50 52 68 60 L70 100 L30 100 Z" fill="#eeb98a"/>
+    <path d="M30 96 h40 v10 h-40 Z" fill="${c}"/>
+    <path d="M34 62 Q42 72 50 62 Q58 72 66 62 L64 70 L36 70 Z" fill="${c}"/>
+    <rect x="22" y="58" width="9" height="36" rx="4" fill="#eeb98a"/>
+    <rect x="69" y="58" width="9" height="36" rx="4" fill="#eeb98a"/>
+    <circle cx="26" cy="96" r="5" fill="#eeb98a"/>
+    <circle cx="74" cy="96" r="5" fill="#eeb98a"/>
+    <circle cx="50" cy="36" r="19" fill="#eeb98a"/>
+    <path d="M31 34 Q30 12 50 12 Q70 12 69 34 L72 58 Q64 50 62 36 L38 36 Q36 50 28 58 Z" fill="${hair}"/>
+    <rect x="36" y="30" width="12" height="8" rx="3" fill="#111"/>
+    <rect x="52" y="30" width="12" height="8" rx="3" fill="#111"/>
+    <rect x="46" y="32" width="8" height="3" fill="#111"/>
+    <path d="M44 48 Q50 52 56 48" stroke="#c2185b" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+    <circle cx="33" cy="56" r="2.5" fill="#ffd600"/><circle cx="67" cy="56" r="2.5" fill="#ffd600"/>
+  </svg>`;
+}
+
+/* tipi di nemici nelle imboscate */
+const ENEMIES = [
+  { svg: maranzaSVG,   w: 4 },
+  { svg: pettoNudoSVG, w: 2 },
+  { svg: bevitoreSVG,  w: 2 },
+  { svg: bikiniSVG,    w: 2 },
+];
+function pickEnemy() {
+  const tot = ENEMIES.reduce((s,e)=>s+e.w,0);
+  let r = Math.random()*tot;
+  for (const e of ENEMIES) { if ((r -= e.w) <= 0) return e.svg; }
+  return maranzaSVG;
+}
+
+const TAUNTS = ["Bro sei lento 💀","Zio, scarso!","AHAHAH fra","Mi-Ma è nostra zio","Troppo lento bro","Che pippa zio 😎"];
+const HITS = ["ANNIENTATO!","BOOM!","SISTEMATO!","CIAO ZIO!","ADIOS!"];
+
+/* ---- frasi parlate (sintesi vocale del browser) ---- */
+const SPAWN_LINES = ["oh bro","ehi zio","sono io il capo della zona","cazzo guardi?","tiro fuori la lama?","fra, hai un problema?","questa è zona nostra bro"];
+const EXPIRE_LINES = ["sei troppo lento zio","ahahah che pippa","scarso bro"];
+let voiceIT = null;
+function initVoice() {
+  const pick = () => {
+    const vs = speechSynthesis.getVoices();
+    voiceIT = vs.find(v => v.lang && v.lang.toLowerCase().startsWith('it')) || null;
+  };
+  pick();
+  speechSynthesis.onvoiceschanged = pick;
+}
+if ('speechSynthesis' in window) initVoice();
+function speak(txt) {
+  if (!('speechSynthesis' in window)) return;
+  try {
+    if (speechSynthesis.pending || speechSynthesis.speaking) speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(txt);
+    u.lang = 'it-IT';
+    if (voiceIT) u.voice = voiceIT;
+    u.rate = 1.05 + Math.random()*0.25;
+    u.pitch = 0.6 + Math.random()*0.5; // voce bassa da duro
+    u.volume = 1;
+    speechSynthesis.speak(u);
+  } catch(e) {}
+}
+
+/* ================= AUDIO ================= */
+let actx = null;
+function audio() { if (!actx) actx = new (window.AudioContext||window.webkitAudioContext)(); return actx; }
+function tone(f, t, dur, type='square', vol=.15, slide=0) {
+  const a = audio(), o = a.createOscillator(), g = a.createGain();
+  o.type = type; o.frequency.setValueAtTime(f, a.currentTime + t);
+  if (slide) o.frequency.exponentialRampToValueAtTime(slide, a.currentTime + t + dur);
+  g.gain.setValueAtTime(vol, a.currentTime + t);
+  g.gain.exponentialRampToValueAtTime(.001, a.currentTime + t + dur);
+  o.connect(g).connect(a.destination); o.start(a.currentTime + t); o.stop(a.currentTime + t + dur + .05);
+}
+const sfx = {
+  shot:  () => { tone(900,0,.08,'square',.12,200); tone(150,0,.1,'sawtooth',.1,60); },
+  hit:   () => { tone(500,0,.07,'square',.14); tone(700,.06,.07,'square',.14); tone(1000,.12,.12,'square',.14); },
+  taunt: () => { tone(220,0,.12,'square',.12); tone(180,.12,.18,'square',.12,90); },
+  oops:  () => { tone(400,0,.2,'triangle',.18,100); tone(200,.18,.3,'triangle',.15,80); },
+  alarm: () => { tone(660,0,.09,'square',.13); tone(880,.1,.09,'square',.13); tone(660,.2,.09,'square',.13); },
+  step:  () => { tone(440,0,.05,'triangle',.07); },
+  over:  () => { tone(400,0,.25,'sawtooth',.15,200); tone(300,.25,.25,'sawtooth',.15,150); tone(200,.5,.5,'sawtooth',.15,80); }
+};
+
+/* ================= STREET VIEW ================= */
+const $ = id => document.getElementById(id);
+const game = $('game');
+let panorama = null, svService = null;
+let state = null;
+
+window.gm_authFailure = function() {
+  localStorage.removeItem('mh_gmaps_key');
+  $('keyScreen').classList.remove('hidden');
+  $('startScreen').classList.add('hidden');
+  $('keyError').textContent = "Chiave non valida o Maps JavaScript API non abilitata. Riprova.";
+  $('btnKey').disabled = false;
+};
+
+const _cerr = console.error.bind(console);
+console.error = function(...args) {
+  const msg = args.join(' ');
+  if (msg.includes('Google Maps')) {
+    let hint = msg;
+    if (msg.includes('InvalidKey')) hint = "Chiave API non valida. Ricontrolla di averla copiata per intero.";
+    else if (msg.includes('RefererNotAllowed')) hint = "La chiave ha restrizioni sui siti che bloccano questa pagina (Application restrictions → metti il dominio giusto o 'None').";
+    else if (msg.includes('ApiNotActivated')) hint = "La 'Maps JavaScript API' non è abilitata sul progetto.";
+    else if (msg.includes('BillingNotEnabled') || msg.includes('Billing')) hint = "Il progetto Google Cloud non ha la fatturazione attiva (richiesta anche per l'uso gratuito).";
+    else if (msg.includes('ExpiredKey')) hint = "Chiave scaduta. Creane una nuova.";
+    $('keyError').textContent = hint;
+    $('keyScreen').classList.remove('hidden');
+    $('btnKey').disabled = false;
+  }
+  _cerr(...args);
+};
+
+window.initSV = function() {
+  svService = new google.maps.StreetViewService();
+  panorama = new google.maps.StreetViewPanorama($('pano'), {
+    pov: { heading: 20, pitch: 0 },
+    zoom: 0.8,
+    addressControl: false,
+    fullscreenControl: false,
+    motionTracking: false,
+    showRoadLabels: true,
+    zoomControl: false,
+    clickToGo: true,
+  });
+  panorama.addListener('pano_changed', onStep);
+  goToStart(() => {
+    $('keyScreen').classList.add('hidden');
+    $('startScreen').classList.remove('hidden');
+  });
+};
+
+function loadMapsApi(key) {
+  $('btnKey').disabled = true;
+  $('keyError').textContent = "Caricamento...";
+  const s = document.createElement('script');
+  s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly&callback=initSV`;
+  s.onerror = () => {
+    $('keyError').innerHTML = "Il browser non riesce a scaricare lo script di Google Maps. Disattiva l'ad-blocker per questa pagina o prova un altro browser.";
+    $('btnKey').disabled = false;
+  };
+  document.head.appendChild(s);
+}
+
+function goToStart(done) {
+  svService.getPanorama({
+    location: { lat: START.lat, lng: START.lng },
+    radius: 200,
+    preference: google.maps.StreetViewPreference.NEAREST,
+    source: google.maps.StreetViewSource.OUTDOOR
+  }, (data, status) => {
+    if (status === 'OK' && data && data.location) {
+      suppressStep = true;
+      panorama.setPano(data.location.pano);
+      panorama.setPov({ heading: Math.random()*360, pitch: 0 });
+      updateAddress(data.location);
+      if (done) done(true);
+    } else {
+      $('keyError').textContent = "Street View non trovato al punto di partenza.";
+    }
+  });
+}
+
+function updateAddress(loc) {
+  if (!loc) { const l = panorama.getLocation && panorama.getLocation(); loc = l; }
+  if (loc) {
+    $('addrName').textContent = loc.shortDescription || loc.description || "Milano Marittima";
+    $('addrSub').textContent = "Milano Marittima, Cervia — Street View";
+  }
+}
+
+/* ================= GAME ================= */
+function newState() {
+  return { score:0, lives:3, steps:0, combo:0, bestCombo:0, kills:0,
+    danger:0.22, active:new Set(), playing:false, idleTimer:null, busy:false };
+}
+
+function updateHUD() {
+  $('scoreVal').textContent = state.score;
+  $('stepsVal').textContent = state.steps;
+  $('lives').textContent = '🕶️'.repeat(Math.max(0,state.lives)) + '▫️'.repeat(Math.max(0,3-state.lives));
+  $('combo').textContent = state.combo >= 2 ? `combo x${state.combo}` : '';
+  $('dangerFill').style.width = Math.round(state.danger*100) + '%';
+}
+
+function banner(html, dur=1500, alarm=false) {
+  const b = $('banner'); b.innerHTML = html;
+  b.classList.toggle('alarm', alarm);
+  b.classList.add('show');
+  setTimeout(() => b.classList.remove('show'), dur);
+}
+
+/* ogni cambio di panorama = un passo */
+let suppressStep = false;
+function onStep() {
+  updateAddress();
+  if (suppressStep) { suppressStep = false; return; }
+  if (!state || !state.playing) return;
+
+  state.steps++;
+  state.score += 10;
+  sfx.step();
+  // il pericolo sale a ogni passo
+  state.danger = Math.min(0.95, state.danger + 0.1);
+  updateHUD();
+  resetIdle();
+
+  if (state.busy) return; // imboscata già in corso
+  if (Math.random() < state.danger) ambush();
+}
+
+/* fermarsi troppo non è sicuro */
+function resetIdle() {
+  clearTimeout(state.idleTimer);
+  state.idleTimer = setTimeout(() => {
+    if (state.playing && !state.busy && Math.random() < .65) ambush();
+    resetIdle();
+  }, 4500 + Math.random()*3500);
+}
+
+function ambush() {
+  state.busy = true;
+  state.danger = 0.18; // dopo l'imboscata il pericolo riparte
+  const n = 2 + Math.floor(Math.random() * Math.min(4, 1 + state.steps/8)); // 2-5 nemici
+  banner("⚠️ IMBOSCATA!", 1100, true);
+  sfx.alarm();
+  const lifeTime = Math.max(850, 2200 - state.steps*45);
+  for (let i = 0; i < n; i++) {
+    setTimeout(() => { if (state.playing) spawnNPC(lifeTime); }, 400 + i*340);
+  }
+  updateHUD();
+}
+
+function spawnNPC(lifeTime) {
+  const W = window.innerWidth, H = window.innerHeight;
+  const isTourist = state.steps >= 8 && Math.random() < .15;
+  const h = Math.round(90 + Math.random()*60);
+  const x = 60 + Math.random() * (W - 120 - h*0.62);
+  const yBase = H * (0.45 + Math.random() * 0.40);
+
+  const el = document.createElement('div');
+  el.className = 'npc';
+  el.innerHTML = (isTourist ? turistaSVG(h) : pickEnemy()(h)) +
+    `<svg class="ring" viewBox="0 0 20 20"><circle class="bg" cx="10" cy="10" r="8"/><circle class="fg" cx="10" cy="10" r="8" stroke-dasharray="50.3" stroke-dashoffset="0"/></svg>`;
+  el.style.left = x+'px';
+  el.style.top = (yBase - h)+'px';
+  game.appendChild(el);
+
+  const life = isTourist ? lifeTime*1.2 : lifeTime;
+  const ring = el.querySelector('.fg');
+  ring.style.stroke = isTourist ? '#81c784' : '#ffd54f';
+  ring.style.transition = `stroke-dashoffset ${life}ms linear`;
+  requestAnimationFrame(() => requestAnimationFrame(() => ring.style.strokeDashoffset = '50.3'));
+
+  const npc = { el, isTourist, dead:false,
+    timeout: setTimeout(() => expireNPC(npc), life),
+    shakeT: setTimeout(() => el.classList.add('leaving'), life*0.6)
+  };
+  state.active.add(npc);
+  el.addEventListener('pointerdown', e => { e.stopPropagation(); shotFlash(e); hitNPC(npc); });
+
+  // frase parlata + fumetto all'apparizione
+  if (!isTourist && Math.random() < .65) {
+    const line = SPAWN_LINES[Math.floor(Math.random()*SPAWN_LINES.length)];
+    speak(line);
+    taunt(x + h*0.31, (yBase - h) - 6, line);
+  }
+}
+
+function removeNPC(npc) {
+  clearTimeout(npc.timeout); clearTimeout(npc.shakeT);
+  state.active.delete(npc);
+  setTimeout(() => npc.el.remove(), 600);
+  if (state.active.size === 0) state.busy = false;
+}
+
+function expireNPC(npc) {
+  if (npc.dead) return; npc.dead = true;
+  const r = npc.el.getBoundingClientRect();
+  if (!npc.isTourist) {
+    state.lives--; state.combo = 0;
+    taunt(r.left + r.width/2, r.top - 10, TAUNTS[Math.floor(Math.random()*TAUNTS.length)]);
+    floatText(r.left + r.width/2, r.top + 20, '-1 🕶️', true);
+    sfx.taunt();
+    if (Math.random() < .7) speak(EXPIRE_LINES[Math.floor(Math.random()*EXPIRE_LINES.length)]);
+  }
+  npc.el.style.transition = 'opacity .4s, transform .4s';
+  npc.el.style.opacity = '0';
+  npc.el.style.transform = 'translateY(30px)';
+  removeNPC(npc);
+  updateHUD();
+  if (state.lives <= 0) gameOver();
+}
+
+function hitNPC(npc) {
+  if (npc.dead || !state.playing) return; npc.dead = true;
+  const r = npc.el.getBoundingClientRect();
+  const cx = r.left + r.width/2, cy = r.top + r.height/2;
+  if (npc.isTourist) {
+    state.score = Math.max(0, state.score - 150);
+    state.combo = 0;
+    floatText(cx, cy, '-150 😱 TURISTA!', true);
+    taunt(cx, cy - 40, 'Maleducato!!');
+    sfx.oops();
+  } else {
+    state.combo++; state.kills++;
+    state.bestCombo = Math.max(state.bestCombo, state.combo);
+    const pts = 100 * Math.min(state.combo, 5);
+    state.score += pts;
+    const label = state.combo >= 3 ? HITS[Math.floor(Math.random()*HITS.length)] : '';
+    floatText(cx, cy, `+${pts} ${label}`);
+    poof(cx, cy);
+    sfx.hit();
+  }
+  npc.el.classList.add('dead');
+  removeNPC(npc);
+  updateHUD();
+}
+
+/* ---- effects ---- */
+function poof(x, y) {
+  const p = document.createElement('div');
+  p.className = 'poof'; p.textContent = '💥';
+  p.style.left = (x-20)+'px'; p.style.top = (y-20)+'px';
+  game.appendChild(p); setTimeout(() => p.remove(), 550);
+}
+function floatText(x, y, txt, bad=false) {
+  const t = document.createElement('div');
+  t.className = 'floatTxt' + (bad ? ' bad' : '');
+  t.textContent = txt;
+  t.style.left = x+'px'; t.style.top = y+'px';
+  t.style.transform = 'translateX(-50%)';
+  game.appendChild(t); setTimeout(() => t.remove(), 950);
+}
+function taunt(x, y, txt) {
+  const t = document.createElement('div');
+  t.className = 'taunt'; t.textContent = txt;
+  t.style.left = x+'px'; t.style.top = (y-30)+'px';
+  game.appendChild(t); setTimeout(() => t.remove(), 1350);
+}
+function shotFlash(e) {
+  const f = document.createElement('div');
+  f.className = 'flash';
+  f.style.left = (e.clientX-13)+'px'; f.style.top = (e.clientY-13)+'px';
+  game.appendChild(f); setTimeout(() => f.remove(), 150);
+  sfx.shot();
+}
+
+/* ---- lifecycle ---- */
+function startGame() {
+  audio();
+  if (state) clearTimeout(state.idleTimer);
+  state = newState();
+  state.playing = true;
+  document.querySelectorAll('.npc,.poof,.floatTxt,.taunt').forEach(n => n.remove());
+  $('startScreen').classList.add('hidden');
+  $('gameOverScreen').classList.add('hidden');
+  updateHUD();
+  goToStart(() => {
+    banner("🚶 Cammina... se hai coraggio<small>clicca le frecce sulla strada per muoverti</small>", 2600);
+    resetIdle();
+  });
+}
+
+function gameOver() {
+  state.playing = false;
+  clearTimeout(state.idleTimer);
+  state.active.forEach(n => { clearTimeout(n.timeout); clearTimeout(n.shakeT); n.el.remove(); });
+  state.active.clear();
+  sfx.over();
+  const prev = +(localStorage.getItem('mh_walk_best')||0);
+  const best = Math.max(state.score, prev);
+  localStorage.setItem('mh_walk_best', best);
+  $('finalStats').innerHTML =
+    `Punteggio: <b>${state.score}</b> &nbsp;|&nbsp; Record: <b>${best}</b><br>` +
+    `Passi: <b>${state.steps}</b> &nbsp;|&nbsp; Maranza annientati: <b>${state.kills}</b> &nbsp;|&nbsp; Combo max: <b>x${state.bestCombo}</b><br>` +
+    `Sei caduto in: <b>${$('addrName').textContent}</b>`;
+  $('goText').textContent = state.steps >= 30
+    ? "Una passeggiata eroica, ma i maranza erano troppi..."
+    : "I maranza hanno conquistato Milano Marittima...";
+  setTimeout(() => $('gameOverScreen').classList.remove('hidden'), 800);
+}
+
+/* ---- key handling ---- */
+$('btnKey').addEventListener('click', () => {
+  const k = $('keyInput').value.trim();
+  if (!k) { $('keyError').textContent = "Incolla prima la tua API key."; return; }
+  localStorage.setItem('mh_gmaps_key', k);
+  loadMapsApi(k);
+});
+$('keyInput').addEventListener('keydown', e => { if (e.key === 'Enter') $('btnKey').click(); });
+$('btnStart').addEventListener('click', startGame);
+$('btnRetry').addEventListener('click', startGame);
+
+const savedKey = DEFAULT_KEY || localStorage.getItem('mh_gmaps_key');
+if (savedKey) { $('keyInput').value = savedKey; loadMapsApi(savedKey); }
+</script>
+</body>
+</html>
